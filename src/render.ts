@@ -84,57 +84,32 @@ const avgPixel = (pixels: Pixel[]): Pixel => {
     return { color, alpha };
 };
 
-type PosDir = { pos: vec3.Vec3; dir: vec3.Vec3 };
+export type RenderPixel = (model: Model, screenCoords: vec2.Vec2, lightSourcesNormalized: LightSource[]) => Pixel;
 
-const getPixelMultisampling = (model: Model, posDirArray: PosDir[], lightSources: LightSource[]): Pixel =>
-    avgPixel(posDirArray.map(({ pos, dir }) => getPixel(model, pos, dir, lightSources)));
-
-const getShadowPixelMultisampling = (
-    model: Model,
-    groundSdf: Sdf,
-    posDirArray: PosDir[],
-    lightSources: LightSource[]
-): Pixel => avgPixel(posDirArray.map(({ pos, dir }) => getShadowPixel(model, groundSdf, pos, dir, lightSources)));
-
-export type RenderPixel = (
-    model: Model,
-    screenCoords: vec2.Vec2,
-    lightSourcesNormalized: LightSource[],
-    pattern: MultiSamplePattern
-) => Pixel;
-
-const perspectiveRenderPixel: RenderPixel = (model, screenCoords, lightSourcesNormalized, pattern) => {
-    const posDirArray: PosDir[] = getMultisamplePattern(pattern).map(offset => ({
-        pos: [0, 0, 0],
-        dir: vec3.normalize([screenCoords[0] + offset[0], -screenCoords[1] + offset[1], -1])
-    }));
-    return getPixelMultisampling(model, posDirArray, lightSourcesNormalized);
+const perspectiveRenderPixel: RenderPixel = (model, screenCoords, lightSourcesNormalized) => {
+    const dir = vec3.normalize([screenCoords[0], -screenCoords[1], -1]);
+    return getPixel(model, [0, 0, 0], dir, lightSourcesNormalized);
 };
 
-const screenCoordsToOrthoGraphicCoords = (screenCoords: vec2.Vec2, pattern: MultiSamplePattern): PosDir[] =>
-    getMultisamplePattern(pattern).map(offset => ({
-        pos: [screenCoords[0] + offset[0], -screenCoords[1] + offset[1], 0],
-        dir: [0, 0, -1]
-    }));
-
-const orthographicRenderPixel: RenderPixel = (sdf, screenCoords, lightSourcesNormalized, pattern) => {
-    const posDirArray: PosDir[] = screenCoordsToOrthoGraphicCoords(screenCoords, pattern);
-    return getPixelMultisampling(sdf, posDirArray, lightSourcesNormalized);
-};
+const orthographicRenderPixel: RenderPixel = (sdf, screenCoords, lightSourcesNormalized) =>
+    getPixel(sdf, [screenCoords[0], -screenCoords[1], 0], [0, 0, -1], lightSourcesNormalized);
 
 const orthographicRenderShadowPixel =
     (groundSdf: Sdf): RenderPixel =>
-    (sdf, screenCoords, lightSourcesNormalized, pattern) => {
-        const posDirArray: PosDir[] = screenCoordsToOrthoGraphicCoords(screenCoords, pattern);
-        return getShadowPixelMultisampling(sdf, groundSdf, posDirArray, lightSourcesNormalized);
-    };
+    (sdf, screenCoords, lightSourcesNormalized) =>
+        getShadowPixel(sdf, groundSdf, [screenCoords[0], -screenCoords[1], 0], [0, 0, -1], lightSourcesNormalized);
 
 const orthographicRenderWithShadowPixel =
     (groundSdf: Sdf): RenderPixel =>
-    (sdf, screenCoords, lightSourcesNormalized, pattern) => {
-        const posDirArray: PosDir[] = screenCoordsToOrthoGraphicCoords(screenCoords, pattern);
-        const pixel = getPixelMultisampling(sdf, posDirArray, lightSourcesNormalized);
-        const shadowPixel = getShadowPixelMultisampling(sdf, groundSdf, posDirArray, lightSourcesNormalized);
+    (sdf, screenCoords, lightSourcesNormalized) => {
+        const pixel = getPixel(sdf, [screenCoords[0], -screenCoords[1], 0], [0, 0, -1], lightSourcesNormalized);
+        const shadowPixel = getShadowPixel(
+            sdf,
+            groundSdf,
+            [screenCoords[0], -screenCoords[1], 0],
+            [0, 0, -1],
+            lightSourcesNormalized
+        );
         return {
             color: vec3.add(pixel.color, vec3.scale(shadowPixel.color, 1 - pixel.alpha)),
             alpha: pixel.alpha + shadowPixel.alpha * (1 - pixel.alpha)
@@ -156,7 +131,9 @@ export const renderImage =
             dir: ls.dir === undefined ? undefined : vec3.normalize(ls.dir)
         }));
         const getCoords = pixelCoordsToScreenCoords(resolution);
-        const posToPixel = (pos: vec2.Vec2) => renderPixel(sdf, getCoords(pos), lightSourcesNormalized, pattern);
+        const offsets = getMultisamplePattern(pattern);
+        const posToPixel = (pos: vec2.Vec2) =>
+            avgPixel(offsets.map(offset => renderPixel(sdf, getCoords(vec2.add(pos, offset)), lightSourcesNormalized)));
         return grid.create(resolution, posToPixel);
     };
 
@@ -221,7 +198,12 @@ export const renderPartialImage =
             dir: ls.dir === undefined ? undefined : vec3.normalize(ls.dir)
         }));
         const getCoords = pixelCoordsToScreenCoords(resolution);
-        const posToPixel = (pos: vec2.Vec2) => renderPixel(model, getCoords(pos), lightSourcesNormalized, pattern);
+
+        const offsets = getMultisamplePattern(pattern);
+        const posToPixel = (pos: vec2.Vec2) =>
+            avgPixel(
+                offsets.map(offset => renderPixel(model, getCoords(vec2.add(pos, offset)), lightSourcesNormalized))
+            );
         const pixels = grid.create(resolution, getTransparent);
         const posArray = pixels.flatMap((row, i) => row.map((_, j): vec2.Vec2 => [i, j]));
 
