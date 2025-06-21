@@ -48,9 +48,27 @@ const getShadowPixel = (
 const pixelCoordsToScreenCoords = (resolution: vec2.Vec2) => (coords: vec2.Vec2) =>
     vec2.scale(vec2.sub(vec2.add(coords, [0.5, 0.5]), vec2.scale(resolution, 0.5)), 1 / resolution[1]);
 
-type MultiSamplePattern = "1" | "8";
+type MultiSamplePattern = "1" | "2" | "4" | "8";
 
 const getMultisamplePattern1 = (): vec2.Vec2[] => [[0, 0]];
+
+const getMultisamplePattern2 = (): vec2.Vec2[] => {
+    const posArray: vec2.Vec2[] = [
+        [4, 4],
+        [-4, -4]
+    ];
+    return posArray.map(pos => vec2.scale(pos, 1 / 16));
+};
+
+const getMultisamplePattern4 = (): vec2.Vec2[] => {
+    const posArray: vec2.Vec2[] = [
+        [-2, -6],
+        [6, -2],
+        [-6, 2],
+        [2, 6]
+    ];
+    return posArray.map(pos => vec2.scale(pos, 1 / 16));
+};
 
 const getMultisamplePattern8 = (): vec2.Vec2[] => {
     const posArray: vec2.Vec2[] = [
@@ -68,6 +86,8 @@ const getMultisamplePattern8 = (): vec2.Vec2[] => {
 
 const getMultisamplePattern = (pattern: MultiSamplePattern): vec2.Vec2[] => {
     if (pattern === "1") return getMultisamplePattern1();
+    if (pattern === "2") return getMultisamplePattern2();
+    if (pattern === "4") return getMultisamplePattern4();
     if (pattern === "8") return getMultisamplePattern8();
     throw Error(`Invalid pattern ${pattern}`);
 };
